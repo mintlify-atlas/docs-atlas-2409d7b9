@@ -288,6 +288,54 @@ Partials are template fragments available on `ctx.partials`. Custom partials are
   </Accordion>
 </AccordionGroup>
 
+## Type partials (`partials/types.mjs`)
+
+`partials/types.mjs` provides the `someType` function and a full set of per-kind type renderers. All of them are spread directly into the `partials` object via `...typePartials` in `partials/index.mjs`.
+
+### `someType(model)`
+
+The central type resolver. Accepts a TypeDoc `SomeType` and returns a `{type}` string wrapped in curly braces. It calls an internal `resolve` function that handles every TypeDoc type kind:
+
+| Type kind | Output |
+|-----------|--------|
+| `intrinsic`, `reference` | `{TypeName}` |
+| `literal` (string) | `{"value"}` (JSON-encoded) |
+| `literal` (other) | `{value}` |
+| `array` | `{ElementType[]}` |
+| `tuple` | `{A\|B\|...}` (union of elements) |
+| `union`, `intersection` | `{A\|B\|...}` |
+| `optional`, `indexedAccess` | delegates to element/object type |
+| `query` | delegates to query type |
+| `typeOperator` | delegates to target type |
+| `conditional` | `{TrueType\|FalseType}` |
+| `named-tuple-member` | delegates to element type |
+| `reflection` | `{object}` |
+| `inferred`, `unknown` | `{unknown}` |
+| `declarationType` | `{object}` (special-cased export) |
+| `functionType` | `{Function}` (special-cased export) |
+
+### Named exports
+
+All of the following are aliases of `someType` (they delegate to the same resolver):
+
+`arrayType`, `conditionalType`, `indexAccessType`, `inferredType`, `intersectionType`, `intrinsicType`, `literalType`, `namedTupleType`, `optionalType`, `queryType`, `referenceType`, `reflectionType`, `tupleType`, `typeOperatorType`, `unionType`, `unknownType`
+
+Two special-case exports override the default resolver:
+
+- **`declarationType`** — always returns `"{object}"` regardless of content.
+- **`functionType`** — always returns `"{Function}"` regardless of content.
+
+```js partials/types.mjs
+export const someType = (model) => `{${resolve(model)}}`;
+
+export const arrayType = someType,
+  conditionalType = someType,
+  // ... all other kinds
+
+export const declarationType = () => "{object}";
+export const functionType = () => "{Function}";
+```
+
 ## Stability levels
 
 The `stabilityBlockquote` helper maps JSDoc tags to stability levels modelled on the Node.js stability index.

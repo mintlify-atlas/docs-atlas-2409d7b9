@@ -61,7 +61,7 @@ Handles namespace merging and generates `type-map.json`, which maps type names t
 
 ### `plugins/theme/`
 
-Contains the custom `@node-core/doc-kit` theme that controls the rendered HTML output. Changes here affect visual layout and HTML structure. After modifying theme files, run `npm run build-html` (or the full `npm run build`) and inspect the `out/` directory.
+Contains the custom `doc-kit` TypeDoc theme (a `typedoc-plugin-markdown` theme extension) that controls how Markdown output is structured and formatted. Changes here affect the layout and content of every generated Markdown page — and by extension the final HTML. After modifying theme files, run `npm run generate-docs` to regenerate Markdown, then `npm run build-html` (or the full `npm run build`) and inspect the `out/` directory.
 
 ### `generate-md.mjs`
 

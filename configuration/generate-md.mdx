@@ -84,7 +84,7 @@ Three plugins are loaded in order:
 | Plugin | Purpose |
 | --- | --- |
 | `typedoc-plugin-markdown` | Replaces TypeDoc's default HTML renderer with a Markdown renderer. |
-| `./plugins/processor.mjs` | A custom plugin that post-processes the generated output (type linking, content transformations). |
+| `./plugins/processor.mjs` | A custom plugin that converts accessors to properties, merges `export=` namespaces, and writes `type-map.json`. |
 | `./plugins/theme/index.mjs` | Registers the `doc-kit` custom theme used by the `theme` option below. |
 
 ### `theme`
