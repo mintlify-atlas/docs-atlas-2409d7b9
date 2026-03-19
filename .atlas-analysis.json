@@ -1,0 +1,61 @@
+{
+  "projectType": "cli-tool",
+  "projectName": "webpack-doc-kit",
+  "projectDescription": "An automated TypeScript API documentation generator for webpack that extracts type definitions from webpack's types.d.ts and produces Markdown and HTML documentation deployed to GitHub Pages.",
+  "theme": "aspen",
+  "primaryColor": "#1a73e8",
+  "lightColor": "#4fc3f7",
+  "darkColor": "#0d47a1",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": ["introduction", "quickstart"]
+          },
+          {
+            "group": "How It Works",
+            "pages": ["how-it-works/overview", "how-it-works/typedoc-pipeline", "how-it-works/webpack-sync"]
+          },
+          {
+            "group": "Configuration",
+            "pages": ["configuration/generate-md", "configuration/tsconfig"]
+          },
+          {
+            "group": "Plugins",
+            "pages": ["plugins/overview", "plugins/processor", "plugins/theme"]
+          },
+          {
+            "group": "Scripts & CI",
+            "pages": ["scripts/npm-scripts", "scripts/github-actions"]
+          },
+          {
+            "group": "Contributing",
+            "pages": ["contributing"]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Automated TypeScript API documentation extraction from webpack's types.d.ts",
+    "Custom TypeDoc plugins for namespace merging and type-map generation",
+    "Custom doc-kit Markdown theme with stability annotations (@deprecated, @experimental, @beta, @legacy)",
+    "Scheduled GitHub Actions workflow to sync with the latest webpack main branch every 24 hours",
+    "Converts TypeDoc Markdown output to HTML via @node-core/doc-kit",
+    "Deploys generated HTML documentation to GitHub Pages automatically"
+  ],
+  "publicApiSurface": [
+    "npm run generate-docs",
+    "npm run build-html",
+    "npm run build",
+    "npm run lint",
+    "npm run format:check",
+    "plugins/processor.mjs (load)",
+    "plugins/theme/index.mjs (DocKitTheme, DocKitThemeContext, load)",
+    "plugins/theme/helpers/index.mjs (typedListItem, typedList, renderExamples, stabilityBlockquote)",
+    "plugins/theme/partials/index.mjs (signature, memberTitle, constructor, parametersList)"
+  ]
+}
