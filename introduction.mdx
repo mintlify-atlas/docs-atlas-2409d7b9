@@ -1,0 +1,61 @@
+---
+title: "Introduction"
+description: "webpack-doc-kit is an automated TypeScript API documentation generator for webpack, built on TypeDoc and deployed to GitHub Pages."
+---
+
+webpack-doc-kit extracts type definitions from webpack's `types.d.ts` and produces Markdown and HTML documentation. The output is automatically deployed to GitHub Pages and kept in sync with upstream webpack — no manual intervention required.
+
+<Info>
+  webpack-doc-kit tracks the exact webpack commit used for each doc generation run. The `HEAD_COMMIT` file always reflects the pinned commit SHA, so docs are reproducible and auditable.
+</Info>
+
+## How it works
+
+The pipeline runs in four stages:
+
+1. **TypeDoc** reads webpack's TypeScript type definitions from `webpack/types.d.ts`
+2. **Custom plugins** process the output — `plugins/processor.mjs` handles namespace merging and type-map generation, and `plugins/theme/` applies a custom doc-kit theme
+3. **@node-core/doc-kit** converts the generated Markdown into HTML
+4. **GitHub Actions** deploys the result to GitHub Pages on every push to `main`
+
+## HEAD\_COMMIT tracking
+
+The `HEAD_COMMIT` file pins the exact `webpack/webpack` commit SHA used for doc generation. A scheduled GitHub Actions workflow (`sync.yml`) runs every 24 hours at 04:00 UTC and:
+
+- Fetches the latest commit from the webpack `main` branch
+- Compares it against the current value of `HEAD_COMMIT`
+- If a new commit is detected, checks out webpack at that commit, regenerates docs, updates `HEAD_COMMIT`, and pushes the changes
+
+This keeps documentation in sync with upstream webpack without any manual steps.
+
+<Note>
+  The current pinned webpack commit is `214f361891d8f51f41bafb2e760cb3240d6014be`.
+</Note>
+
+## Key features
+
+<CardGroup cols={2}>
+  <Card title="Automated sync" icon="rotate">
+    A daily scheduled workflow checks for new webpack commits and regenerates docs automatically.
+  </Card>
+  <Card title="TypeDoc-powered" icon="file-code">
+    Extracts type information directly from webpack's `types.d.ts` using TypeDoc with the `typedoc-plugin-markdown` plugin.
+  </Card>
+  <Card title="Custom plugins" icon="puzzle-piece">
+    `plugins/processor.mjs` merges namespaces and generates a type map. A custom `doc-kit` theme controls rendering output.
+  </Card>
+  <Card title="GitHub Pages deployment" icon="globe">
+    The `deploy.yml` workflow builds HTML with `@node-core/doc-kit` and publishes the `out/` directory to GitHub Pages on every push to `main`.
+  </Card>
+  <Card title="CI validation" icon="circle-check">
+    Pull requests are checked to ensure the `pages/` directory is up to date. CI fails if generated docs don't match what's committed.
+  </Card>
+  <Card title="Reproducible builds" icon="lock">
+    All workflows pin webpack to the exact commit in `HEAD_COMMIT`, and all GitHub Actions are pinned to specific SHAs.
+  </Card>
+</CardGroup>
+
+## Next steps
+
+- Follow the [Quickstart](/quickstart) to set up and run the generator locally.
+- Read the How It Works section for a deeper look at the plugin pipeline and TypeDoc configuration.

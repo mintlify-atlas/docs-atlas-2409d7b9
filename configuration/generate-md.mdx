@@ -1,0 +1,152 @@
+---
+title: "generate-md.mjs"
+description: "The TypeDoc entry point that extracts webpack type definitions and produces Markdown documentation."
+---
+
+`generate-md.mjs` is the main script that drives documentation generation. It initialises TypeDoc with all required plugins and options, converts webpack's type definitions into a TypeDoc project model, and writes the Markdown output to disk.
+
+<Warning>
+webpack must be checked out at `./webpack/` relative to the project root before running this script. The script reads `./webpack/package.json` to determine the webpack version and imports `./webpack/types.d.ts` as the entry point. If the directory is missing, the script will fail.
+</Warning>
+
+## Full source
+
+```js generate-md.mjs
+import { Application } from "typedoc";
+import webpack from "./webpack/package.json" with { type: "json" };
+import { major } from "semver";
+
+const app = await Application.bootstrapWithPlugins({
+  entryPoints: ["./webpack/types.d.ts"],
+  out: `pages/v${major(webpack.version)}.x`,
+
+  // Plugins
+  plugin: [
+    "typedoc-plugin-markdown",
+    "./plugins/processor.mjs",
+    "./plugins/theme/index.mjs",
+  ],
+  theme: "doc-kit",
+
+  // Formatting
+  hideGroupHeadings: true,
+  hideBreadcrumbs: true,
+  hidePageHeader: true,
+  disableSources: true,
+
+  router: "module",
+  entryFileName: "index",
+
+  tsconfig: "tsconfig.json",
+});
+
+const project = await app.convert();
+
+if (project) {
+  await app.generateOutputs(project);
+}
+```
+
+## How it works
+
+The script calls `Application.bootstrapWithPlugins`, which initialises a TypeDoc `Application` instance and automatically discovers and loads the plugins listed in the `plugin` array. Once the application is ready, `app.convert()` parses the entry point and builds an in-memory project model. If conversion succeeds, `app.generateOutputs(project)` writes all output files to disk.
+
+## TypeDoc options
+
+### `entryPoints`
+
+```js
+entryPoints: ["./webpack/types.d.ts"]
+```
+
+The single entry point for TypeDoc's type analysis. `types.d.ts` is webpack's top-level type declaration file and is the canonical source of all public API types. TypeDoc follows imports and re-exports from this file to build the full type graph.
+
+### `out`
+
+```js
+out: `pages/v${major(webpack.version)}.x`
+```
+
+The output directory for generated Markdown files. The directory name is derived from the **semver major version** of the webpack package installed at `./webpack/`. For example, if `./webpack/package.json` reports version `5.105.4`, the output directory becomes `pages/v5.x`. This makes it straightforward to maintain versioned documentation side-by-side.
+
+### `plugin`
+
+```js
+plugin: [
+  "typedoc-plugin-markdown",
+  "./plugins/processor.mjs",
+  "./plugins/theme/index.mjs",
+]
+```
+
+Three plugins are loaded in order:
+
+| Plugin | Purpose |
+| --- | --- |
+| `typedoc-plugin-markdown` | Replaces TypeDoc's default HTML renderer with a Markdown renderer. |
+| `./plugins/processor.mjs` | A custom plugin that post-processes the generated output (type linking, content transformations). |
+| `./plugins/theme/index.mjs` | Registers the `doc-kit` custom theme used by the `theme` option below. |
+
+### `theme`
+
+```js
+theme: "doc-kit"
+```
+
+Selects the `doc-kit` theme, which is registered by `./plugins/theme/index.mjs`. The theme controls the structure and formatting of every generated Markdown page.
+
+### Formatting options
+
+```js
+hideGroupHeadings: true,
+hideBreadcrumbs: true,
+hidePageHeader: true,
+disableSources: true,
+```
+
+| Option | Effect |
+| --- | --- |
+| `hideGroupHeadings` | Omits the bold group-name headings (e.g. "Classes", "Interfaces") that TypeDoc normally inserts above member groups. |
+| `hideBreadcrumbs` | Removes the breadcrumb trail at the top of each page. |
+| `hidePageHeader` | Suppresses the auto-generated page title/header block. |
+| `disableSources` | Does not emit links back to webpack source files. |
+
+Together these options produce clean, minimal Markdown pages that are ready to be consumed by the downstream HTML build step.
+
+### `router`
+
+```js
+router: "module"
+```
+
+Tells TypeDoc to use module-based routing, where each module (or namespace) gets its own output file. This keeps the generated file tree aligned with webpack's module structure.
+
+### `entryFileName`
+
+```js
+entryFileName: "index"
+```
+
+Sets the name (without extension) of the root output file for each module directory. Each module's top-level page is written as `index.md`.
+
+### `tsconfig`
+
+```js
+tsconfig: "tsconfig.json"
+```
+
+Points TypeDoc to the project's TypeScript configuration file. TypeDoc uses this to resolve types correctly when analysing webpack's declarations. See the [TypeScript configuration](/configuration/tsconfig) page for details.
+
+## Running the script
+
+The script is wired to the `generate-docs` npm script:
+
+```bash
+npm run generate-docs
+```
+
+To run the full pipeline (Markdown generation followed by HTML build), use:
+
+```bash
+npm run build
+```

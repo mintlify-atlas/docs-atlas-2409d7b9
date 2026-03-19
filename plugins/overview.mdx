@@ -1,0 +1,53 @@
+---
+title: "Plugins overview"
+description: "webpack-doc-kit ships two custom TypeDoc plugins: a processor plugin that normalises the reflection tree and a theme plugin that controls Markdown output."
+---
+
+webpack-doc-kit extends TypeDoc through two plugins that are loaded as part of the `generate-md.mjs` entry point. Both plugins follow the standard TypeDoc plugin interface — each module exports a `load(app)` function that TypeDoc calls during initialisation.
+
+<CardGroup cols={2}>
+  <Card title="Processor plugin" icon="gear" href="/plugins/processor">
+    Converts accessors to properties, merges `export=` namespaces, and writes a `type-map.json` file to the output directory.
+  </Card>
+  <Card title="Custom theme plugin" icon="paintbrush" href="/plugins/theme">
+    Defines the `doc-kit` Markdown theme with custom helpers and partials for stability annotations, typed lists, and member titles.
+  </Card>
+</CardGroup>
+
+## Plugin interface
+
+Every plugin module must export a named `load` function. TypeDoc calls it once with the running application instance, giving the plugin access to the converter, renderer, and options.
+
+```js
+/**
+ * @param {import('typedoc-plugin-markdown').MarkdownApplication} app
+ */
+export function load(app) {
+  // register listeners or define themes here
+}
+```
+
+## Registration in `generate-md.mjs`
+
+Plugins are declared in the `plugin` array passed to `Application.bootstrapWithPlugins`. The order matters: `typedoc-plugin-markdown` must come first because the processor and theme plugins depend on the types and events it adds.
+
+```js
+const app = await Application.bootstrapWithPlugins({
+  entryPoints: ["./webpack/types.d.ts"],
+  out: `pages/v${major(webpack.version)}.x`,
+
+  // Plugins
+  plugin: [
+    "typedoc-plugin-markdown",
+    "./plugins/processor.mjs",
+    "./plugins/theme/index.mjs",
+  ],
+  theme: "doc-kit",
+
+  // ...
+});
+```
+
+<Note>
+  The `theme: "doc-kit"` option activates the custom theme defined by the theme plugin. Without it, TypeDoc falls back to the default Markdown theme even if the theme plugin is loaded.
+</Note>

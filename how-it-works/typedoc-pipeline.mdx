@@ -1,0 +1,111 @@
+---
+title: "TypeDoc pipeline"
+description: "How generate-md.mjs bootstraps TypeDoc, which options are set, and what each plugin contributes."
+---
+
+All Markdown generation starts from a single entry point: `generate-md.mjs`. It calls `Application.bootstrapWithPlugins`, passes a configuration object, converts the webpack type definitions, and writes the output.
+
+## The full script
+
+```js generate-md.mjs
+import { Application } from "typedoc";
+import webpack from "./webpack/package.json" with { type: "json" };
+import { major } from "semver";
+
+const app = await Application.bootstrapWithPlugins({
+  entryPoints: ["./webpack/types.d.ts"],
+  out: `pages/v${major(webpack.version)}.x`,
+
+  // Plugins
+  plugin: [
+    "typedoc-plugin-markdown",
+    "./plugins/processor.mjs",
+    "./plugins/theme/index.mjs",
+  ],
+  theme: "doc-kit",
+
+  // Formatting
+  hideGroupHeadings: true,
+  hideBreadcrumbs: true,
+  hidePageHeader: true,
+  disableSources: true,
+
+  router: "module",
+  entryFileName: "index",
+
+  tsconfig: "tsconfig.json",
+});
+
+const project = await app.convert();
+
+if (project) {
+  await app.generateOutputs(project);
+}
+```
+
+## TypeDoc options
+
+| Option | Value | Purpose |
+|---|---|---|
+| `entryPoints` | `["./webpack/types.d.ts"]` | Single entry point — webpack's top-level type declaration file. |
+| `out` | `pages/v${major(webpack.version)}.x` | Output directory, e.g. `pages/v5.x`. |
+| `plugin` | *(see below)* | List of plugins to load before processing. |
+| `theme` | `"doc-kit"` | Uses the custom theme registered by `theme/index.mjs`. |
+| `hideGroupHeadings` | `true` | Suppresses group heading elements in rendered Markdown. |
+| `hideBreadcrumbs` | `true` | Removes breadcrumb navigation from each page. |
+| `hidePageHeader` | `true` | Removes the auto-generated page header from each page. |
+| `disableSources` | `true` | Omits "defined in" source-file links from the output. |
+| `router` | `"module"` | Organises output by module, one file per exported module. |
+| `entryFileName` | `"index"` | Names the root output file `index.md` instead of the default. |
+
+## Output directory naming
+
+The `out` path is computed at runtime using webpack's own `package.json`:
+
+```js
+out: `pages/v${major(webpack.version)}.x`,
+```
+
+<Info>
+  This relies on the `semver` package's `major()` function to extract the major version number from webpack's version string. For webpack `5.105.4` this produces the directory `pages/v5.x`.
+</Info>
+
+## Plugins
+
+### typedoc-plugin-markdown
+
+The official TypeDoc Markdown renderer. It replaces TypeDoc's default HTML theme with one that emits `.md` files, which downstream tools (including `@node-core/doc-kit`) can process further.
+
+### plugins/processor.mjs
+
+Runs two transformations on the TypeDoc reflection tree and one post-render step:
+
+**During `Converter.EVENT_RESOLVE_BEGIN`:**
+
+- **Accessor-to-property conversion** — TypeDoc models getters and setters as `Accessor` reflections. The processor downcasts each one to `Property` and copies the type and comment from the getter (or setter) signature. This simplifies the rendered output.
+- **Namespace merging** — webpack's `types.d.ts` uses `export=` namespaces. The processor finds every `Namespace` reflection named `export=` and merges it into its parent, flattening the hierarchy.
+
+**During `Renderer.EVENT_END`:**
+
+- **Type-map generation** — After all pages are written, the processor iterates every routable reflection, builds a map of `fullyQualifiedName → URL` (with `.md` replaced by `.html`), and writes it to `type-map.json` inside the `out` directory. `@node-core/doc-kit` uses this map to resolve cross-type links when building HTML.
+
+### plugins/theme/index.mjs
+
+Registers the `doc-kit` theme used by the `theme` option:
+
+```js plugins/theme/index.mjs
+export class DocKitTheme extends MarkdownTheme {
+  getRenderContext(page) {
+    this.application.options.setValue("hidePageHeader", true);
+    this.application.options.setValue("hideBreadcrumbs", true);
+    this.application.options.setValue("propertiesFormat", "table");
+    return new DocKitThemeContext(this, page, this.application.options);
+  }
+}
+
+export function load(app) {
+  app.renderer.defineTheme("doc-kit", DocKitTheme);
+}
+```
+
+`DocKitTheme` extends `MarkdownTheme` and overrides `getRenderContext` to enforce `propertiesFormat: table` on every page render. `DocKitThemeContext` wires in custom helpers and partials that control how individual reflection kinds are formatted.

@@ -1,80 +1,121 @@
 ---
 title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+description: "Set up webpack-doc-kit locally and generate webpack API documentation from source."
 ---
 
-## Get started in three steps
+This guide walks through running webpack-doc-kit on your local machine to generate Markdown and HTML documentation from webpack's TypeScript type definitions.
 
-Get your documentation site running locally and make your first customization.
+<Warning>
+  webpack must be checked out at the exact commit pinned in `HEAD_COMMIT` (`214f361891d8f51f41bafb2e760cb3240d6014be`). Using a different commit may produce docs that don't match what CI expects, and the docs-check workflow will reject them.
+</Warning>
 
-### Step 1: Set up your local environment
+<Steps>
+  <Step title="Clone the repository">
+    Clone webpack-doc-kit and enter the project directory.
 
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
-    
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
-    
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
+    ```bash
+    git clone https://github.com/webpack/webpack-doc-kit.git
+    cd webpack-doc-kit
+    ```
+  </Step>
 
-### Step 2: Deploy your changes
+  <Step title="Checkout webpack at the pinned commit">
+    webpack-doc-kit reads type definitions from a local `webpack/` directory. Read the pinned commit SHA from `HEAD_COMMIT` and check out that exact revision.
 
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
-    
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
+    <CodeGroup>
 
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
+    ```bash using HEAD_COMMIT
+    git clone https://github.com/webpack/webpack.git webpack
+    git -C webpack checkout $(cat HEAD_COMMIT)
+    ```
 
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
+    ```bash manual
+    git clone https://github.com/webpack/webpack.git webpack
+    git -C webpack checkout 214f361891d8f51f41bafb2e760cb3240d6014be
+    ```
 
-### Step 3: Go live
+    </CodeGroup>
 
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
+    After this step your working tree should look like:
 
-## Next steps
+    ```
+    webpack-doc-kit/
+    ├── webpack/          # checked out at the pinned commit
+    ├── generate-md.mjs
+    ├── plugins/
+    ├── HEAD_COMMIT
+    └── package.json
+    ```
+  </Step>
 
-Now that you have your docs running, explore these key features:
+  <Step title="Install dependencies">
+    Install all npm dependencies using `npm ci` to reproduce the exact versions recorded in the lockfile.
 
-<CardGroup cols={2}>
+    ```bash
+    npm ci
+    ```
 
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
+    This installs runtime dependencies including `typedoc`, `typedoc-plugin-markdown`, `@node-core/doc-kit`, `webpack`, and `semver`, as well as dev dependencies for linting and formatting.
+  </Step>
 
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
+  <Step title="Generate Markdown">
+    Run the `generate-docs` script to invoke TypeDoc and produce Markdown output.
 
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
+    ```bash
+    npm run generate-docs
+    ```
 
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
+    Internally this runs:
 
-</CardGroup>
+    ```bash
+    node generate-md.mjs
+    ```
 
-<Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
-</Note>
+    TypeDoc reads `webpack/types.d.ts`, runs the `typedoc-plugin-markdown`, `plugins/processor.mjs`, and `plugins/theme/index.mjs` plugins, and writes Markdown files to `pages/v5.x/`.
+
+    <Tip>
+      After generation, inspect the `pages/v5.x/` directory to review the produced Markdown. The entry point is `pages/v5.x/index.md` and the type map used by the HTML build is at `pages/v5.x/type-map.json`.
+    </Tip>
+  </Step>
+
+  <Step title="Build HTML output">
+    Run the `build` script to generate Markdown and then convert it to HTML in one step.
+
+    ```bash
+    npm run build
+    ```
+
+    This runs both stages in sequence:
+
+    ```bash
+    npm run generate-docs && npm run build-html
+    ```
+
+    The `build-html` script calls `@node-core/doc-kit`:
+
+    ```bash
+    doc-kit generate -t web -i ./pages/v5.x/**/*.md --type-map ./pages/v5.x/type-map.json -o out
+    ```
+
+    The final HTML output is written to the `out/` directory. Open `out/index.html` in a browser to preview the generated documentation site.
+  </Step>
+</Steps>
+
+## Available scripts
+
+| Script | Description |
+| --- | --- |
+| `npm run generate-docs` | Generate Markdown from webpack types |
+| `npm run build-html` | Convert Markdown to HTML |
+| `npm run build` | Generate docs and build HTML |
+| `npm run lint` | Run ESLint |
+| `npm run format:check` | Check Prettier formatting |
+
+## What runs in CI
+
+On every pull request, the `ci.yml` workflow:
+
+1. Installs dependencies and runs `npm run lint && npm run format:check`
+2. Checks out webpack at the commit in `HEAD_COMMIT`, runs `npm run generate-docs`, and verifies that the `pages/` directory has no uncommitted changes
+
+If `pages/` is out of date, CI will print a diff and fail. Run `npm run generate-docs` locally and commit the updated files before pushing.

@@ -1,0 +1,99 @@
+---
+title: "Webpack version sync"
+description: "How the daily sync.yml workflow detects new webpack commits, updates HEAD_COMMIT, and regenerates documentation automatically."
+---
+
+webpack-doc-kit always documents a specific, reproducible webpack commit rather than an uncontrolled branch tip. The mechanism that keeps this commit current is the `sync.yml` GitHub Actions workflow.
+
+## The HEAD_COMMIT file
+
+`HEAD_COMMIT` is a plain text file at the repository root containing a single full commit SHA:
+
+```text
+214f361891d8f51f41bafb2e760cb3240d6014be
+```
+
+Every workflow that checks out webpack's source reads this file and passes the SHA as the `ref`. This means:
+
+- Builds are reproducible — the same SHA always produces the same docs.
+- The deploy and CI workflows never silently pick up an unreviewed upstream change.
+- The history of `HEAD_COMMIT` in git provides an audit trail of every webpack version that was documented.
+
+## The sync workflow
+
+The `sync.yml` workflow runs on a daily schedule and can also be triggered manually.
+
+### Schedule
+
+```yaml
+on:
+  schedule:
+    # Run every 24 hours at 04:00 UTC
+    - cron: "0 4 * * *"
+  workflow_dispatch:
+```
+
+<Note>
+  The `workflow_dispatch` trigger lets you run the sync at any time from the GitHub Actions UI without waiting for the next scheduled run. This is useful after making changes to the generation pipeline that you want to verify against the latest webpack commit immediately.
+</Note>
+
+### Sync process
+
+<Steps>
+  <Step title="Fetch the latest webpack commit">
+    The workflow queries the webpack/webpack repository for the current HEAD of the `main` branch using `git ls-remote`, then reads the SHA currently stored in `HEAD_COMMIT`:
+
+    ```bash
+    LATEST=$(git ls-remote https://github.com/webpack/webpack.git refs/heads/main | cut -f1)
+    CURRENT=$(cat HEAD_COMMIT)
+    ```
+
+    Both values are written to `$GITHUB_OUTPUT` for use in later steps.
+  </Step>
+
+  <Step title="Check for changes">
+    The two SHAs are compared. If they match, the workflow sets `changed=false` and all subsequent steps are skipped — no unnecessary work is done.
+
+    ```bash
+    if [ "$LATEST" = "$CURRENT" ]; then
+      echo "changed=false" >> "$GITHUB_OUTPUT"
+      echo "No changes detected, skipping sync."
+    else
+      echo "changed=true" >> "$GITHUB_OUTPUT"
+      echo "New webpack commit detected, syncing."
+    fi
+    ```
+  </Step>
+
+  <Step title="Check out the new webpack commit">
+    When `changed=true`, the workflow checks out the `webpack/webpack` repository at the new SHA into the `webpack/` subdirectory.
+  </Step>
+
+  <Step title="Install dependencies and update HEAD_COMMIT">
+    `npm ci` installs all dependencies. The new SHA is then written to `HEAD_COMMIT`, overwriting the previous value:
+
+    ```bash
+    echo "$LATEST" > HEAD_COMMIT
+    ```
+  </Step>
+
+  <Step title="Regenerate documentation">
+    `npm run generate-docs` runs `generate-md.mjs`, which reads the freshly checked-out `webpack/types.d.ts` and writes updated Markdown into `pages/v5.x/`.
+  </Step>
+
+  <Step title="Commit and push">
+    The bot commits `HEAD_COMMIT` and the updated `pages/` directory with a message that includes the first seven characters of the new SHA:
+
+    ```bash
+    git add HEAD_COMMIT pages/
+    git commit -m "chore: sync webpack docs to $(echo $LATEST | cut -c1-7)"
+    git push
+    ```
+
+    An example commit message looks like: `chore: sync webpack docs to 214f361`.
+  </Step>
+</Steps>
+
+## When no changes are found
+
+If the SHA in `HEAD_COMMIT` already matches the latest commit on webpack's `main` branch, every step after the comparison check has an `if: steps.check.outputs.changed == 'true'` condition and is skipped entirely. The workflow exits successfully without modifying any files or creating a commit.

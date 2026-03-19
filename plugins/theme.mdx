@@ -1,0 +1,303 @@
+---
+title: "Custom theme plugin"
+description: "The doc-kit theme extends typedoc-plugin-markdown with custom helpers for stability annotations and typed lists, and custom partials for signatures, member titles, and constructors."
+---
+
+The theme plugin (`plugins/theme/index.mjs`) registers a custom Markdown theme called `doc-kit`. It is composed of three layers: the theme class, a set of helpers, and a set of partials.
+
+## Theme classes
+
+`DocKitTheme` extends `MarkdownTheme` from `typedoc-plugin-markdown`. Its `getRenderContext` override sets a handful of global options on every render pass and returns a `DocKitThemeContext` instance.
+
+`DocKitThemeContext` extends `MarkdownThemeContext` and replaces the `helpers` and `partials` properties with the custom implementations described below.
+
+```js
+import { MarkdownTheme, MarkdownThemeContext } from "typedoc-plugin-markdown";
+import helpers from "./helpers/index.mjs";
+import partials from "./partials/index.mjs";
+
+export class DocKitTheme extends MarkdownTheme {
+  getRenderContext(page) {
+    this.application.options.setValue("hidePageHeader", true);
+    this.application.options.setValue("hideBreadcrumbs", true);
+    this.application.options.setValue("propertiesFormat", "table");
+    return new DocKitThemeContext(this, page, this.application.options);
+  }
+}
+
+export class DocKitThemeContext extends MarkdownThemeContext {
+  helpers = helpers(this);
+  partials = partials(this);
+  templates = { ...this.templates };
+}
+```
+
+## Registration
+
+The `load` function registers the theme with the renderer under the name `"doc-kit"`. This name must match the `theme` option in `generate-md.mjs`.
+
+```js
+export function load(app) {
+  app.renderer.defineTheme("doc-kit", DocKitTheme);
+}
+```
+
+## Helpers
+
+Helpers are utility functions available on `ctx.helpers` throughout the theme. The custom helpers are merged on top of the base `MarkdownThemeContext` helpers so all built-in helpers remain available.
+
+<AccordionGroup>
+  <Accordion title="typedListItem({ label, name, type, comment })">
+    Renders a single entry in a typed list as a Markdown list item.
+
+    | Parameter | Type | Description |
+    |-----------|------|-------------|
+    | `label` | `string` | A plain-text label (e.g. `"Returns"`). Takes priority over `name`. |
+    | `name` | `string` | A symbol name, rendered in backticks if `label` is absent. |
+    | `type` | `SomeType \| string` | The TypeDoc type or a raw string. Rendered via `ctx.partials.someType` for objects. |
+    | `comment` | `Comment \| CommentTag` | Provides the description text via `comment.summary` or `comment.content`. |
+
+    ```js
+    typedListItem({ label, name, type, comment }) {
+      const namePart = label ? ` ${label}:` : name ? ` \`${name}\`` : "";
+
+      const typePart = type
+        ? ` ${typeof type === "string" ? type : ctx.partials.someType(type)}`
+        : "";
+
+      const descPart = comment
+        ? ` ${ctx.helpers.getCommentParts(comment.summary ?? comment.content)}`
+        : "";
+
+      return `*${namePart}${typePart}${descPart}`;
+    }
+    ```
+
+    **Output format:** `* Returns: {string} The compiled output path`
+  </Accordion>
+
+  <Accordion title="typedList(entries)">
+    Maps an array of typed-list entries through `typedListItem` and joins them with newlines.
+
+    ```js
+    typedList(entries) {
+      return entries.map(ctx.helpers.typedListItem).join("\n");
+    }
+    ```
+
+    This function is also assigned to several partials (`parametersList`, `typedParametersList`, `typeDeclarationList`, `propertiesTable`) so that parameters and properties are consistently rendered as typed lists.
+  </Accordion>
+
+  <Accordion title="renderExamples(comment, headingLevel)">
+    Finds all `@example` block tags in a comment and renders each one as a headed section. Returns `null` when there are no examples.
+
+    - If there is more than one `@example` tag, headings are numbered (`Example 1`, `Example 2`, …).
+    - The heading level is one deeper than the surrounding section (`headingLevel + 1`).
+    - Tags with empty bodies are silently omitted.
+
+    ```js
+    renderExamples(comment, headingLevel) {
+      const examples =
+        comment?.blockTags?.filter((t) => t.tag === "@example") ?? [];
+      if (!examples.length) return null;
+
+      const prefix = "#".repeat(headingLevel + 1);
+      return examples
+        .map((tag, index) => {
+          const heading = `${prefix} Example${examples.length > 1 ? ` ${index + 1}` : ""}`;
+          const body = ctx.helpers.getCommentParts(tag.content).trim();
+          return body ? `${heading}\n\n${body}` : null;
+        })
+        .filter(Boolean)
+        .join("\n\n");
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="stabilityBlockquote(comment)">
+    Inspects a comment for stability-related JSDoc tags and returns a Markdown blockquote, or `null` if none are present. Only the first matching stability level is rendered.
+
+    | Tag | Output |
+    |-----|--------|
+    | `@deprecated` | `> Stability: 0 - Deprecated[: message]` |
+    | `@experimental` or `@beta` | `> Stability: 1 - Experimental` |
+    | `@legacy` | `> Stability: 3 - Legacy[: message]` |
+
+    `@deprecated` and `@legacy` include the tag's content as a trailing message when present. `@experimental`/`@beta` are modifier tags and carry no content.
+
+    ```js
+    stabilityBlockquote(comment) {
+      if (!comment) return null;
+
+      const deprecated = comment.blockTags?.find((t) => t.tag === "@deprecated");
+      const isExperimental =
+        comment.modifierTags?.has("@experimental") ||
+        comment.modifierTags?.has("@beta");
+      const legacy = comment.blockTags?.find((t) => t.tag === "@legacy");
+
+      if (deprecated) {
+        const message = deprecated.content?.length
+          ? ctx.helpers.getCommentParts(deprecated.content).trim()
+          : "";
+        return message
+          ? `> Stability: 0 - Deprecated: ${message}`
+          : `> Stability: 0 - Deprecated`;
+      }
+
+      if (isExperimental) {
+        return `> Stability: 1 - Experimental`;
+      }
+
+      if (legacy) {
+        const message = legacy.content?.length
+          ? ctx.helpers.getCommentParts(legacy.content).trim()
+          : "";
+        return message
+          ? `> Stability: 3 - Legacy: ${message}`
+          : `> Stability: 3 - Legacy`;
+      }
+
+      return null;
+    }
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Partials
+
+Partials are template fragments available on `ctx.partials`. Custom partials are merged on top of the base `MarkdownThemeContext` partials and the type partials from `partials/types.mjs`.
+
+<AccordionGroup>
+  <Accordion title="signature(model, options)">
+    Renders a complete function signature block in the following order:
+
+    1. **Stability blockquote** — emitted if the comment carries a stability tag.
+    2. **Type parameter list** — rendered when `model.typeParameters` is non-empty.
+    3. **Parameter list** — rendered when `model.parameters` is non-empty.
+    4. **Return type** — always present; falls back to `"void"` when `model.type` is absent.
+    5. **Comment body** — rendered without tags (`showTags: false`).
+    6. **Examples** — rendered via `renderExamples`.
+
+    When `options.multipleSignatures` is `true`, only the signature's own comment is used. Otherwise the parent reflection's comment is used as a fallback.
+
+    ```js
+    signature(model, options) {
+      const comment = options.multipleSignatures
+        ? model.comment
+        : model.comment || model.parent?.comment;
+
+      const stability = ctx.helpers.stabilityBlockquote(comment);
+
+      return [
+        stability,
+        stability && "",
+        model.typeParameters?.length &&
+          ctx.partials.typeParametersList(model.typeParameters, {
+            headingLevel: options.headingLevel,
+          }),
+        model.parameters?.length &&
+          ctx.partials.parametersList(model.parameters, {
+            headingLevel: options.headingLevel,
+          }),
+        ctx.helpers.typedListItem({
+          label: "Returns",
+          type: model.type ?? "void",
+          comment: model.comment?.getTag("@returns"),
+        }),
+        "",
+        comment &&
+          ctx.partials.comment(comment, {
+            headingLevel: options.headingLevel,
+            showTags: false,
+          }),
+        ctx.helpers.renderExamples(comment, options.headingLevel),
+      ]
+        .filter((x) => typeof x === "string" || Boolean(x))
+        .join("\n");
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="memberTitle(model)">
+    Returns the Markdown title string for a class member. The format depends on the reflection kind:
+
+    - **Constructor** — `` `new ClassName([param1][, param2])` ``
+    - **Method / function** — prefixed with the kind label (e.g. `Static method: `) followed by `` `name(params)` ``
+    - **Property / accessor / other** — prefixed with the kind label (e.g. `Class: `) followed by `` `name` ``
+
+    Optional parameters are wrapped in square brackets. The first parameter never has a leading comma; subsequent parameters are separated by `, ` (or `[, ]` for optional ones).
+
+    ```js
+    memberTitle(model) {
+      if (model.kind === ReflectionKind.Constructor) {
+        const params = model.signatures?.[0]?.parameters ?? [];
+        return `\`new ${model.parent.name}(${formatParams(params)})\``;
+      }
+
+      const prefix = getMemberPrefix(model);
+      const params = model.signatures?.[0]?.parameters;
+
+      if (!params) {
+        return `${prefix}\`${model.name}\``;
+      }
+
+      const paramsString = formatParams(params);
+      return `${prefix}\`${model.name}(${paramsString})\``;
+    }
+    ```
+
+    **Kind prefix table:**
+
+    | Kind | `isStatic` | Prefix |
+    |------|-----------|--------|
+    | `Class` | — | `Class: ` |
+    | `Interface` | — | `Interface: ` |
+    | `Enum` | — | `Enum: ` |
+    | `TypeAlias` | — | `Type: ` |
+    | `Namespace` | — | `Namespace: ` |
+    | `Accessor` | — | `Accessor: ` |
+    | `Method` | `true` | `Static method: ` |
+    | All others | — | _(no prefix)_ |
+  </Accordion>
+
+  <Accordion title="constructor(model, options)">
+    Renders all overload signatures of a constructor. For each signature it emits:
+
+    1. A heading at `options.headingLevel` showing `` `new ClassName(params)` ``.
+    2. The signature body via `ctx.partials.signature` at `headingLevel + 1`.
+
+    Multiple signatures are separated by a blank line.
+
+    ```js
+    constructor(model, options) {
+      const md = [];
+      model.signatures?.forEach((signature) => {
+        const paramsString = formatParams(signature.parameters ?? []);
+
+        const heading = "#".repeat(options.headingLevel);
+        md.push(`${heading} \`new ${model.parent.name}(${paramsString})\``);
+        md.push(
+          ctx.partials.signature(signature, {
+            headingLevel: options.headingLevel + 1,
+          }),
+        );
+      });
+      return md.join("\n\n");
+    }
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Stability levels
+
+The `stabilityBlockquote` helper maps JSDoc tags to stability levels modelled on the Node.js stability index.
+
+| Level | Tag | Blockquote rendered |
+|-------|-----|---------------------|
+| 0 | `@deprecated` | `> Stability: 0 - Deprecated[: message]` |
+| 1 | `@experimental` or `@beta` | `> Stability: 1 - Experimental` |
+| 3 | `@legacy` | `> Stability: 3 - Legacy[: message]` |
+
+<Info>
+  Levels are checked in the order shown above. If a symbol is tagged with both `@deprecated` and `@legacy`, the `@deprecated` level (0) takes precedence.
+</Info>

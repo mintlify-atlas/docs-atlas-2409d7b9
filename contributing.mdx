@@ -1,0 +1,120 @@
+---
+title: "Contributing"
+description: "How to contribute to webpack-doc-kit, including the development workflow, pre-commit hooks, and code style requirements."
+---
+
+webpack-doc-kit is an automated TypeScript API documentation generator for webpack. Contributions that touch documentation generation (plugins, entry point, TypeScript configuration) must ensure the full pipeline still produces valid output.
+
+## Contribution workflow
+
+<Steps>
+  <Step title="Fork and clone">
+    Fork the repository on GitHub and clone your fork locally.
+
+    ```bash
+    git clone https://github.com/<your-username>/webpack-doc-kit.git
+    cd webpack-doc-kit
+    ```
+  </Step>
+  <Step title="Install dependencies">
+    Run `npm install`. This also runs the `prepare` script, which installs the husky pre-commit hook automatically.
+
+    ```bash
+    npm install
+    ```
+  </Step>
+  <Step title="Provide a webpack checkout">
+    Doc generation requires webpack source. Read the `HEAD_COMMIT` file for the pinned commit SHA and check out webpack at that ref:
+
+    ```bash
+    git clone https://github.com/webpack/webpack.git
+    cd webpack && git checkout $(cat ../HEAD_COMMIT) && cd ..
+    ```
+  </Step>
+  <Step title="Make your changes">
+    Edit the relevant source files. See the sections below for guidance on which files affect which parts of the pipeline.
+  </Step>
+  <Step title="Verify the build">
+    Run the full pipeline locally before pushing:
+
+    ```bash
+    npm run build
+    ```
+
+    This runs `generate-docs` (Markdown) and then `build-html` (static HTML). Both must succeed.
+
+    <Tip>Running `npm run build` before pushing catches doc-generation and HTML-build failures locally, before CI does.</Tip>
+  </Step>
+  <Step title="Commit your changes">
+    The pre-commit hook runs lint-staged automatically. If auto-fixes are applied to staged files, stage the updated files and commit again.
+  </Step>
+  <Step title="Open a pull request">
+    Push your branch and open a pull request against `main`. CI will run linting and a doc-freshness check on every PR.
+  </Step>
+</Steps>
+
+## Key files and what they affect
+
+### `plugins/processor.mjs`
+
+Handles namespace merging and generates `type-map.json`, which maps type names to their documentation pages. Changes here affect the structure of the generated Markdown and the cross-reference data consumed by `build-html`. After modifying this file, run `npm run generate-docs` and verify that `pages/` and `pages/v5.x/type-map.json` are updated correctly.
+
+### `plugins/theme/`
+
+Contains the custom `@node-core/doc-kit` theme that controls the rendered HTML output. Changes here affect visual layout and HTML structure. After modifying theme files, run `npm run build-html` (or the full `npm run build`) and inspect the `out/` directory.
+
+### `generate-md.mjs`
+
+The TypeDoc entry point. It configures TypeDoc, loads the plugins, and orchestrates Markdown generation. Changes here can affect which types are documented, how they are grouped, and the content of every generated page. Run `npm run generate-docs` after any change and commit the updated `pages/` output.
+
+### `tsconfig.json`
+
+Controls how TypeDoc resolves and interprets webpack's TypeScript types. Incorrect changes can cause TypeDoc to silently omit types or fail entirely. Run `npm run generate-docs` after modifying this file and diff the `pages/` output to confirm nothing was dropped.
+
+## CI checks on pull requests
+
+Every pull request triggers two CI jobs defined in `.github/workflows/ci.yml`:
+
+- **`lint`** — runs `npm run lint && npm run format:check`. The PR cannot be merged if ESLint reports errors or any file is not formatted correctly.
+- **`docs-check`** — checks out webpack at the pinned `HEAD_COMMIT`, runs `npm run generate-docs`, then fails if the resulting `pages/` directory differs from what is committed. This ensures the `pages/` output is always in sync with the generator source.
+
+## Code style
+
+### ESLint
+
+ESLint is configured in `eslint.config.mjs` using `@eslint/js` recommended rules with Node.js globals. The `node_modules/`, `out/`, and `webpack/` directories are excluded from linting.
+
+```bash
+# Check for violations
+npm run lint
+
+# Auto-fix violations where possible
+npm run lint:fix
+```
+
+### Prettier
+
+Prettier enforces consistent formatting. The following paths are excluded via `.prettierignore`: `node_modules`, `out`, `*.generated.*`, `/webpack`, `pages`, and `.husky`.
+
+```bash
+# Format all files
+npm run format
+
+# Check formatting without writing changes
+npm run format:check
+```
+
+### Pre-commit hook
+
+Husky installs a pre-commit hook that runs lint-staged on every `git commit`. Based on `.lintstagedrc`, staged files matching `js`, `mjs`, `ts`, `tsx`, `md`, `mdx`, `json`, or `yml` are automatically processed by ESLint (with fix) and Prettier (check and write) before the commit is recorded.
+
+```json
+{
+  "**/*.{js,mjs,ts,tsx,md,mdx,json.yml}": [
+    "eslint --fix",
+    "prettier --check --write"
+  ]
+}
+```
+
+If lint-staged applies fixes, stage the modified files and run `git commit` again.

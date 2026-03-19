@@ -1,0 +1,147 @@
+---
+title: "Processor plugin"
+description: "A TypeDoc plugin that normalises the reflection tree before rendering and emits a type-map.json file mapping fully-qualified type names to their HTML URLs."
+---
+
+The processor plugin (`plugins/processor.mjs`) hooks into two TypeDoc lifecycle events to reshape the reflection tree and produce a machine-readable type map.
+
+## Full source
+
+```js
+import { Converter, ReflectionKind, Renderer } from "typedoc";
+import { writeFileSync } from "node:fs";
+import { join } from "node:path";
+
+/**
+ * @param {import('typedoc-plugin-markdown').MarkdownApplication} app
+ */
+export function load(app) {
+  app.converter.on(Converter.EVENT_RESOLVE_BEGIN, (context) => {
+    // Convert accessors to properties to simplify documentation
+    context.project
+      .getReflectionsByKind(ReflectionKind.Accessor)
+      .forEach((accessor) => {
+        accessor.kind = ReflectionKind.Property;
+        if (accessor.getSignature) {
+          accessor.type = accessor.getSignature.type;
+          accessor.comment = accessor.getSignature.comment;
+        } else if (accessor.setSignature) {
+          accessor.type = accessor.setSignature.parameters?.[0]?.type;
+          accessor.comment = accessor.setSignature.comment;
+        }
+      });
+
+    // Merge `export=` namespaces into their parent
+    context.project
+      .getReflectionsByKind(ReflectionKind.Namespace)
+      .filter((ref) => ref.name === "export=")
+      .forEach((namespace) =>
+        context.project.mergeReflections(namespace, namespace.parent),
+      );
+  });
+
+  app.renderer.on(Renderer.EVENT_END, (context) => {
+    const typeMap = Object.fromEntries(
+      context.project
+        .getReflectionsByKind(ReflectionKind.All)
+        .filter((ref) => {
+          // Drop internal TypeDoc artifacts
+          if (ref.name === "export=" || ref.name === "__type") return false;
+          // Drop Reference kind — duplicates of real types
+          if (ref.kind === ReflectionKind.Reference) return false;
+          // Must have a routable page
+          if (!app.renderer.router.hasUrl(ref)) return false;
+          return true;
+        })
+        .map((reference) => [
+          reference.getFullName(),
+          app.renderer.router.getFullUrl(reference).replace(".md", ".html"),
+        ]),
+    );
+
+    writeFileSync(
+      join(app.options.getValue("out"), "type-map.json"),
+      JSON.stringify(typeMap, null, 2),
+    );
+  });
+}
+```
+
+## Behaviours
+
+<AccordionGroup>
+  <Accordion title="Accessor-to-property conversion">
+    Fires on `Converter.EVENT_RESOLVE_BEGIN`, before TypeDoc renders any output.
+
+    TypeDoc models getter/setter pairs as `Accessor` reflections with `getSignature` and `setSignature` children. For documentation purposes these are simpler to present as plain properties, so the plugin mutates each accessor in place:
+
+    - Sets `accessor.kind` to `ReflectionKind.Property`.
+    - If a `getSignature` is present, copies its `type` and `comment` onto the accessor — the return type of the getter becomes the property type.
+    - Otherwise, if only a `setSignature` is present, copies the type of the setter's first parameter and its comment.
+
+    ```js
+    accessor.kind = ReflectionKind.Property;
+    if (accessor.getSignature) {
+      accessor.type = accessor.getSignature.type;
+      accessor.comment = accessor.getSignature.comment;
+    } else if (accessor.setSignature) {
+      accessor.type = accessor.setSignature.parameters?.[0]?.type;
+      accessor.comment = accessor.setSignature.comment;
+    }
+    ```
+
+    After this transformation, downstream partials treat the accessor identically to any other property.
+  </Accordion>
+
+  <Accordion title="Namespace merging (export= flattening)">
+    Also on `EVENT_RESOLVE_BEGIN`, the plugin finds every `Namespace` reflection whose name is exactly `"export="` and merges it into its parent reflection using `context.project.mergeReflections`.
+
+    webpack's type declarations use the CommonJS `export =` pattern, which TypeDoc represents as a nested namespace called `export=`. Without this step every exported member would be buried one level deeper than expected.
+
+    ```js
+    context.project
+      .getReflectionsByKind(ReflectionKind.Namespace)
+      .filter((ref) => ref.name === "export=")
+      .forEach((namespace) =>
+        context.project.mergeReflections(namespace, namespace.parent),
+      );
+    ```
+  </Accordion>
+
+  <Accordion title="Type-map generation">
+    Fires on `Renderer.EVENT_END`, after all output files have been written.
+
+    The plugin walks every reflection in the project and builds a JSON object whose keys are fully-qualified type names (e.g. `"Compiler.hooks"`) and whose values are the corresponding HTML page URLs.
+
+    **Filtering rules** — a reflection is included only when all of the following hold:
+
+    - Its name is not `"export="` or `"__type"` (internal TypeDoc artifacts).
+    - Its kind is not `ReflectionKind.Reference` (re-export aliases that duplicate real types).
+    - The renderer's router can produce a URL for it (`router.hasUrl(ref)`).
+
+    **URL transformation** — the router returns `.md` paths; the plugin replaces the `.md` extension with `.html` so the map is valid for the deployed documentation site.
+
+    ```js
+    app.renderer.router.getFullUrl(reference).replace(".md", ".html")
+    ```
+
+    The resulting object is written to `type-map.json` inside the configured output directory.
+
+    ```js
+    writeFileSync(
+      join(app.options.getValue("out"), "type-map.json"),
+      JSON.stringify(typeMap, null, 2),
+    );
+    ```
+
+    **Example output:**
+
+    ```json
+    {
+      "Compiler": "classes/Compiler.html",
+      "Compiler.hooks": "classes/Compiler.html#hooks",
+      "WebpackOptionsNormalized": "interfaces/WebpackOptionsNormalized.html"
+    }
+    ```
+  </Accordion>
+</AccordionGroup>

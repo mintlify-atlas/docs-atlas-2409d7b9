@@ -1,0 +1,106 @@
+---
+title: "TypeScript configuration"
+description: "The tsconfig.json used by TypeDoc to resolve webpack's type definitions during documentation generation."
+---
+
+<Note>
+This `tsconfig.json` is **not** used to compile the project's own JavaScript files. webpack-doc-kit is written in plain ESM (`.mjs`) and has no compilation step. The tsconfig exists solely so that TypeDoc can resolve types correctly when it analyses webpack's declaration files.
+</Note>
+
+## Full source
+
+```json tsconfig.json
+{
+  "include": [
+    "./webpack/lib/**/*",
+    "./webpack/declarations/lib/**/*",
+    "./webpack/types.d.ts"
+  ],
+  "exclude": ["node_modules"],
+  "compilerOptions": {
+    "allowJs": true,
+    "esModuleInterop": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "paths": {
+      "webpack": ["./node_modules/webpack"]
+    }
+  }
+}
+```
+
+## Why TypeDoc needs a tsconfig
+
+TypeDoc uses the TypeScript compiler API internally to parse and type-check source files before generating documentation. Without a `tsconfig.json`, TypeDoc cannot know which files belong to the project, how to resolve module paths, or whether JavaScript files should be analysed. Providing an explicit tsconfig gives TypeDoc a stable, reproducible view of webpack's type graph.
+
+## Options explained
+
+### `include`
+
+```json
+"include": [
+  "./webpack/lib/**/*",
+  "./webpack/declarations/lib/**/*",
+  "./webpack/types.d.ts"
+]
+```
+
+Tells the TypeScript compiler which files are part of the project:
+
+| Path | Purpose |
+| --- | --- |
+| `./webpack/lib/**/*` | webpack's runtime source files. Included so that TypeScript can follow imports referenced by the type declarations. |
+| `./webpack/declarations/lib/**/*` | Handwritten declaration files that supplement webpack's generated types. |
+| `./webpack/types.d.ts` | The top-level declaration file that is also the TypeDoc entry point. |
+
+### `exclude`
+
+```json
+"exclude": ["node_modules"]
+```
+
+Prevents TypeScript from crawling `node_modules`. Without this exclusion, the compiler would attempt to include every package in the dependency tree, significantly slowing down type resolution.
+
+### `compilerOptions`
+
+#### `allowJs`
+
+```json
+"allowJs": true
+```
+
+Permits `.js` files to be included in the TypeScript project. webpack's `lib/` directory contains plain JavaScript source files, and this flag is required for TypeScript to process them alongside `.d.ts` declaration files.
+
+#### `esModuleInterop`
+
+```json
+"esModuleInterop": true
+```
+
+Enables interoperability between CommonJS and ES module imports. webpack ships as CommonJS and some of its internal modules use `module.exports` patterns. This flag ensures those imports resolve correctly during type analysis.
+
+#### `noEmit`
+
+```json
+"noEmit": true
+```
+
+Instructs TypeScript not to write any output files (`.js`, `.d.ts`, source maps). TypeDoc only needs the compiler's type information; emitting compiled output would be unnecessary and potentially confusing.
+
+#### `skipLibCheck`
+
+```json
+"skipLibCheck": true
+```
+
+Skips type-checking of all `.d.ts` files in `node_modules`. webpack's dependency tree contains declaration files from many third-party packages. Some of these may have type errors unrelated to webpack's own API. `skipLibCheck` prevents those errors from blocking documentation generation.
+
+#### `paths`
+
+```json
+"paths": {
+  "webpack": ["./node_modules/webpack"]
+}
+```
+
+Maps the bare `webpack` module specifier to the locally installed copy at `./node_modules/webpack`. This ensures that any declaration file which does `import type { ... } from "webpack"` resolves to the same package being documented, rather than an ambiguous or missing module.

@@ -1,0 +1,51 @@
+---
+title: "Overview"
+description: "A high-level look at how webpack-doc-kit turns webpack's TypeScript types into deployed HTML documentation."
+---
+
+webpack-doc-kit runs a fully automated pipeline that takes webpack's TypeScript type definitions as input and produces versioned HTML documentation deployed to GitHub Pages. The pipeline has four stages:
+
+<Steps>
+  <Step title="TypeDoc reads webpack/types.d.ts">
+    [TypeDoc](https://typedoc.org) is pointed at webpack's `types.d.ts` entry point. It parses every exported type, interface, class, and accessor into a structured reflection tree.
+  </Step>
+
+  <Step title="Custom plugins process the output">
+    Three plugins run during the TypeDoc build:
+
+    - **`typedoc-plugin-markdown`** — renders the reflection tree as Markdown files.
+    - **`plugins/processor.mjs`** — merges `export=` namespaces into their parents, converts accessors to properties, and emits a `type-map.json` file that maps every fully-qualified type name to its final HTML URL.
+    - **`plugins/theme/index.mjs`** — registers a custom `doc-kit` theme that extends the Markdown theme with custom helpers and partials, and enforces `propertiesFormat: table`.
+  </Step>
+
+  <Step title="@node-core/doc-kit converts Markdown to HTML">
+    The `doc-kit generate` command reads the Markdown pages written by TypeDoc and the `type-map.json` produced by the processor plugin, then emits static HTML into the `out/` directory.
+  </Step>
+
+  <Step title="GitHub Actions deploys HTML to GitHub Pages">
+    The `deploy.yml` workflow runs on every push to `main`. It checks out the webpack commit pinned in `HEAD_COMMIT`, runs the full `npm run build`, uploads the `out/` directory as a Pages artifact, and then deploys it.
+  </Step>
+</Steps>
+
+## Version pinning with HEAD_COMMIT
+
+The file `HEAD_COMMIT` contains a single full commit SHA that identifies the exact webpack/webpack commit used to generate the current documentation:
+
+```text
+214f361891d8f51f41bafb2e760cb3240d6014be
+```
+
+Every workflow that needs webpack's source code (`deploy.yml`, `ci.yml`, and `sync.yml`) reads this file and passes the SHA as the `ref` when checking out the `webpack/webpack` repository. This means the documentation always corresponds to a known, reproducible state of webpack — never an uncontrolled `main` tip.
+
+The `sync.yml` workflow updates `HEAD_COMMIT` automatically when the webpack `main` branch moves forward. See the [Webpack version sync](/how-it-works/webpack-sync) page for details.
+
+## Explore further
+
+<CardGroup cols={2}>
+  <Card title="TypeDoc pipeline" href="/how-it-works/typedoc-pipeline">
+    How `generate-md.mjs` bootstraps TypeDoc, which options are used, and what each plugin contributes.
+  </Card>
+  <Card title="Webpack version sync" href="/how-it-works/webpack-sync">
+    How the daily `sync.yml` workflow keeps the pinned webpack commit up to date.
+  </Card>
+</CardGroup>

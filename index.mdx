@@ -1,97 +1,79 @@
 ---
-title: "Introduction"
-description: "Welcome to the new home for your documentation"
+title: "webpack-doc-kit"
+description: "Automated TypeScript API documentation generator for webpack — extracts type definitions from webpack's types.d.ts and produces Markdown and HTML documentation, deployed to GitHub Pages."
 ---
 
-## Setting up
-
-Get your documentation site up and running in minutes.
-
-<Card
-  title="Start here"
-  icon="rocket"
-  href="/quickstart"
-  horizontal
->
-  Follow our three step quickstart guide.
-</Card>
-
-## Make it yours
-
-Design a docs site that looks great and empowers your users.
-
-<Columns cols={2}>
-  <Card
-    title="Edit locally"
-    icon="pen-to-square"
-    href="/development"
-  >
-    Edit your docs locally and preview them in real time.
+<CardGroup cols={2}>
+  <Card title="Introduction" icon="book-open" href="/introduction">
+    Learn what webpack-doc-kit is and how it fits into the webpack ecosystem.
   </Card>
-  <Card
-    title="Customize your site"
-    icon="palette"
-    href="/essentials/settings"
-  >
-    Customize the design and colors of your site to match your brand.
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Get the documentation pipeline running locally in minutes.
   </Card>
-    <Card
-    title="Set up navigation"
-    icon="map"
-    href="/essentials/navigation"
-  >
-    Organize your docs to help users find what they need and succeed with your product.
+  <Card title="How It Works" icon="gear" href="/how-it-works/overview">
+    Understand the TypeDoc pipeline, custom plugins, and deployment flow.
   </Card>
-  <Card
-    title="API documentation"
-    icon="terminal"
-    href="/api-reference/introduction"
-  >
-    Auto-generate API documentation from OpenAPI specifications.
+  <Card title="Plugins" icon="puzzle-piece" href="/plugins/overview">
+    Explore the processor and custom theme plugins that power the output.
   </Card>
-</Columns>
+</CardGroup>
 
-## Create beautiful pages
+## What is webpack-doc-kit?
 
-Everything you need to create world-class documentation.
+webpack-doc-kit is an automated documentation pipeline that generates TypeScript API reference documentation for [webpack](https://github.com/webpack/webpack). It reads webpack's `types.d.ts`, processes it through TypeDoc with custom plugins, and produces Markdown and HTML output that is automatically deployed to GitHub Pages.
 
-<Columns cols={2}>
-  <Card
-    title="Write with MDX"
-    icon="pen-fancy"
-    href="/essentials/markdown"
-  >
-    Use MDX to style your docs pages.
-  </Card>
-  <Card
-    title="Code samples"
-    icon="code"
-    href="/essentials/code"
-  >
-    Add sample code to demonstrate how to use your product.
-  </Card>
-  <Card
-    title="Images"
-    icon="image"
-    href="/essentials/images"
-  >
-    Display images and other media.
-  </Card>
-  <Card
-    title="Reusable snippets"
-    icon="recycle"
-    href="/essentials/reusable-snippets"
-  >
-    Write once and reuse across your docs.
-  </Card>
-</Columns>
+The pipeline stays in sync with webpack automatically — a scheduled GitHub Actions workflow checks for new commits to webpack's `main` branch every 24 hours and regenerates documentation when changes are detected.
 
-## Need inspiration?
+## Key features
 
-<Card
-  title="See complete examples"
-  icon="stars"
-  href="https://mintlify.com/customers"
->
-  Browse our showcase of exceptional documentation sites.
-</Card>
+<CardGroup cols={2}>
+  <Card title="TypeDoc extraction" icon="magnifying-glass">
+    Reads webpack's `types.d.ts` and extracts all public TypeScript type definitions, interfaces, and classes.
+  </Card>
+  <Card title="Namespace merging" icon="merge">
+    Custom processor plugin merges `export=` namespaces into their parents and converts accessors to properties for cleaner docs.
+  </Card>
+  <Card title="Stability annotations" icon="shield">
+    The custom theme renders `@deprecated`, `@experimental`, `@beta`, and `@legacy` JSDoc tags as styled stability blockquotes.
+  </Card>
+  <Card title="Type map generation" icon="map">
+    Automatically generates a `type-map.json` linking every documented type to its HTML page URL — enabling cross-references.
+  </Card>
+  <Card title="Automated sync" icon="arrows-rotate">
+    A daily GitHub Actions workflow tracks webpack's `main` branch HEAD and regenerates docs when new commits land.
+  </Card>
+  <Card title="GitHub Pages deployment" icon="globe">
+    Built HTML output is automatically deployed to GitHub Pages on every push to `main`.
+  </Card>
+</CardGroup>
+
+## How the pipeline works
+
+<Steps>
+  <Step title="TypeDoc reads webpack types">
+    `generate-md.mjs` bootstraps TypeDoc pointed at `webpack/types.d.ts`, using the custom `doc-kit` theme and `typedoc-plugin-markdown`.
+  </Step>
+  <Step title="Plugins process the output">
+    The `processor.mjs` plugin merges namespaces and generates `type-map.json`. The custom theme plugin renders signatures, stability notes, and typed parameter lists.
+  </Step>
+  <Step title="Markdown is converted to HTML">
+    `@node-core/doc-kit` converts the generated Markdown pages to HTML using the `type-map.json` for cross-reference links.
+  </Step>
+  <Step title="GitHub Pages receives the output">
+    The `deploy.yml` workflow builds and uploads the `out/` directory as a GitHub Pages artifact, then deploys it automatically.
+  </Step>
+</Steps>
+
+## Quick links
+
+<CardGroup cols={3}>
+  <Card title="npm scripts" icon="terminal" href="/scripts/npm-scripts">
+    All available npm run commands
+  </Card>
+  <Card title="GitHub Actions" icon="github" href="/scripts/github-actions">
+    CI, deploy, and sync workflows
+  </Card>
+  <Card title="Contributing" icon="code-pull-request" href="/contributing">
+    How to contribute changes
+  </Card>
+</CardGroup>

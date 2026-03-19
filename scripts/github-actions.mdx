@@ -1,0 +1,215 @@
+---
+title: "GitHub Actions workflows"
+description: "Reference for the three GitHub Actions workflows that handle CI checks, GitHub Pages deployment, and automated daily webpack sync."
+---
+
+webpack-doc-kit uses three workflows located in `.github/workflows/`.
+
+<CardGroup cols={3}>
+  <Card title="CI" icon="circle-check">
+    Runs on every pull request and push to `main`. Lints code and verifies doc generation is up to date.
+  </Card>
+  <Card title="Deploy" icon="rocket">
+    Triggers on push to `main` or manually. Builds the full HTML site and deploys it to GitHub Pages.
+  </Card>
+  <Card title="Sync Webpack" icon="rotate">
+    Runs daily at 04:00 UTC. Checks for new webpack commits, regenerates docs, and pushes updates automatically.
+  </Card>
+</CardGroup>
+
+## CI (`ci.yml`)
+
+**Triggers:** `pull_request` (any branch) and `push` to `main`.
+
+**Permissions:** `contents: read`
+
+The CI workflow runs two parallel jobs.
+
+### Job: `lint`
+
+Runs on every push to `main` and every pull request.
+
+<Steps>
+  <Step title="Checkout code">
+    Checks out the repository at the triggering commit.
+  </Step>
+  <Step title="Setup Node.js">
+    Installs the latest LTS release of Node.js with npm caching enabled.
+  </Step>
+  <Step title="Install dependencies">
+    Runs `npm ci` for a clean, reproducible install.
+  </Step>
+  <Step title="Lint & Format">
+    Runs both checks in sequence:
+
+    ```bash
+    npm run lint && npm run format:check
+    ```
+
+    The job fails if ESLint reports errors or any file is not formatted correctly.
+  </Step>
+</Steps>
+
+### Job: `docs-check`
+
+Runs on pull requests only (`if: github.event_name == 'pull_request'`). Verifies that the `pages/` directory matches what `generate-docs` would produce for the pinned webpack commit.
+
+<Steps>
+  <Step title="Checkout code">
+    Checks out the repository.
+  </Step>
+  <Step title="Read HEAD_COMMIT">
+    Reads the pinned webpack commit SHA from the `HEAD_COMMIT` file and exposes it as a step output.
+
+    ```bash
+    echo "ref=$(cat HEAD_COMMIT)" >> "$GITHUB_OUTPUT"
+    ```
+  </Step>
+  <Step title="Checkout webpack">
+    Clones `webpack/webpack` at the exact pinned commit into the `webpack/` subdirectory.
+  </Step>
+  <Step title="Setup Node.js">
+    Installs the latest LTS release of Node.js with npm caching enabled.
+  </Step>
+  <Step title="Install dependencies">
+    Runs `npm ci`.
+  </Step>
+  <Step title="Regenerate docs">
+    Runs `npm run generate-docs` against the pinned webpack source.
+  </Step>
+  <Step title="Check docs freshness">
+    Compares the working tree against the committed `pages/` directory:
+
+    ```bash
+    if ! git diff --quiet pages/; then
+      echo "::error::The pages/ directory is out of date. Run 'npm run generate-docs' and commit the changes."
+      git diff --stat pages/
+      exit 1
+    fi
+    ```
+
+    The job fails if any file in `pages/` differs from what was regenerated, signalling that committed docs are stale.
+  </Step>
+</Steps>
+
+## Deploy (`deploy.yml`)
+
+**Triggers:** `push` to `main`, or manual dispatch via `workflow_dispatch`.
+
+**Permissions:** `contents: read` (build job); `pages: write` + `id-token: write` (deploy job).
+
+<Note>`workflow_dispatch` is available, so you can trigger a deployment manually from the Actions tab without pushing a commit.</Note>
+
+The workflow has two dependent jobs: `build` then `deploy`.
+
+### Job: `build`
+
+<Steps>
+  <Step title="Checkout code">
+    Checks out the repository.
+  </Step>
+  <Step title="Read HEAD_COMMIT">
+    Reads the pinned webpack commit SHA from `HEAD_COMMIT`:
+
+    ```bash
+    echo "ref=$(cat HEAD_COMMIT)" >> "$GITHUB_OUTPUT"
+    ```
+  </Step>
+  <Step title="Checkout webpack">
+    Clones `webpack/webpack` at the pinned commit into the `webpack/` subdirectory.
+  </Step>
+  <Step title="Setup Node.js">
+    Installs the latest LTS release of Node.js with npm caching enabled.
+  </Step>
+  <Step title="Install dependencies">
+    Runs `npm ci`.
+  </Step>
+  <Step title="Build">
+    Creates the `out/` directory and runs the full build pipeline:
+
+    ```bash
+    mkdir out && npm run build
+    ```
+
+    This runs `generate-docs` (Markdown) then `build-html` (static HTML).
+  </Step>
+  <Step title="Upload artifact">
+    Uploads the `out/` directory as a GitHub Pages artifact using `actions/upload-pages-artifact`.
+  </Step>
+</Steps>
+
+### Job: `deploy`
+
+Depends on the `build` job succeeding. Deploys to the `github-pages` environment.
+
+<Steps>
+  <Step title="Deploy to GitHub Pages">
+    Uses `actions/deploy-pages` to publish the artifact uploaded by the `build` job. The live URL is available as `steps.deployment.outputs.page_url`.
+  </Step>
+</Steps>
+
+## Sync Webpack (`sync.yml`)
+
+**Triggers:** Scheduled daily at `04:00 UTC`, or manual dispatch via `workflow_dispatch`.
+
+```yaml
+schedule:
+  - cron: "0 4 * * *"
+```
+
+<Note>`workflow_dispatch` is available, so you can trigger a sync manually from the Actions tab at any time.</Note>
+
+<Warning>This workflow requires `contents: write` permission because it commits and pushes updated docs directly to the repository. Ensure the repository's Actions settings allow this for the workflow to succeed.</Warning>
+
+**Permissions:** `contents: write`
+
+<Steps>
+  <Step title="Checkout code">
+    Checks out the repository.
+  </Step>
+  <Step title="Get latest webpack commit">
+    Fetches the current HEAD of `webpack/webpack` `main` and reads the locally pinned commit from `HEAD_COMMIT`:
+
+    ```bash
+    LATEST=$(git ls-remote https://github.com/webpack/webpack.git refs/heads/main | cut -f1)
+    CURRENT=$(cat HEAD_COMMIT)
+    ```
+
+    Both values are written to step outputs for use in subsequent steps.
+  </Step>
+  <Step title="Check for changes">
+    Compares the latest upstream commit against the pinned commit. If they are identical, the remaining steps are skipped and the job exits cleanly.
+  </Step>
+  <Step title="Checkout webpack">
+    *(Skipped if no new commit.)* Clones `webpack/webpack` at the new commit into the `webpack/` subdirectory.
+  </Step>
+  <Step title="Setup Node.js">
+    *(Skipped if no new commit.)* Installs the latest LTS release of Node.js with npm caching enabled.
+  </Step>
+  <Step title="Install dependencies">
+    *(Skipped if no new commit.)* Runs `npm ci`.
+  </Step>
+  <Step title="Update HEAD_COMMIT">
+    *(Skipped if no new commit.)* Overwrites `HEAD_COMMIT` with the new commit SHA:
+
+    ```bash
+    echo "${{ steps.latest.outputs.latest }}" > HEAD_COMMIT
+    ```
+  </Step>
+  <Step title="Regenerate docs">
+    *(Skipped if no new commit.)* Runs `npm run generate-docs` against the new webpack source to refresh `pages/`.
+  </Step>
+  <Step title="Commit and push">
+    *(Skipped if no new commit.)* Stages `HEAD_COMMIT` and `pages/`, then commits and pushes as the `github-actions[bot]` user:
+
+    ```bash
+    git config user.name "github-actions[bot]"
+    git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+    git add HEAD_COMMIT pages/
+    git commit -m "chore: sync webpack docs to $(echo ${{ steps.latest.outputs.latest }} | cut -c1-7)"
+    git push
+    ```
+
+    The commit message includes the first seven characters of the new webpack commit SHA.
+  </Step>
+</Steps>
